@@ -7,5 +7,6 @@ venv/
 tmp_test/
 output/
 input/
+runs/
 
 .DS_Store

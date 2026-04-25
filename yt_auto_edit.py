@@ -237,6 +237,42 @@ def generate_captions_whisper_cli(video_path, srt_path, language):
         generated.replace(srt_path)
 
 
+def extract_audio_file(video_path, output_path, audio_format):
+    require_tool("ffmpeg")
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-i",
+        str(video_path),
+        "-vn",
+    ]
+    if audio_format == "wav":
+        cmd.extend(["-acodec", "pcm_s16le", "-ar", "48000", "-ac", "2"])
+    elif audio_format == "m4a":
+        cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+    else:
+        raise SystemExit(f"Unsupported audio format: {audio_format}")
+    cmd.append(str(output_path))
+    run(cmd)
+
+
+def extract_audio(args):
+    video_path = Path(args.video).expanduser().resolve()
+    out_path = Path(args.out).expanduser().resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not video_path.exists():
+        raise SystemExit(f"Video not found: {video_path}")
+
+    audio_format = args.format
+    if audio_format == "auto":
+        audio_format = out_path.suffix.lstrip(".").lower()
+    extract_audio_file(video_path, out_path, audio_format)
+    print(f"Done: {out_path}")
+
+
 def process(args):
     require_tool("ffmpeg")
     require_tool("ffprobe")
@@ -350,6 +386,16 @@ def parse_args(argv=None):
     process_parser.add_argument("--language", default="ko")
     process_parser.add_argument("--whisper-model", default="small")
     process_parser.set_defaults(func=process)
+
+    extract_parser = subparsers.add_parser("extract-audio")
+    extract_parser.add_argument("--video", required=True)
+    extract_parser.add_argument("--out", required=True)
+    extract_parser.add_argument(
+        "--format",
+        choices=["auto", "wav", "m4a"],
+        default="auto",
+    )
+    extract_parser.set_defaults(func=extract_audio)
 
     return parser.parse_args(argv)
 

@@ -29,6 +29,28 @@ pip install -r requirements.txt
 
 ## Quick Start
 
+Run the local web app:
+
+```bash
+source .venv/bin/activate
+python3 app.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:5177
+```
+
+The web UI can:
+
+- Upload a phone video and separate audio file.
+- Cut silent sections and render `edited.mp4`.
+- Generate `edited.srt` when captions are enabled.
+- Extract WAV or M4A audio from a MOV/MP4 file.
+
+## CLI
+
 Put your files somewhere convenient, then run:
 
 ```bash
@@ -45,6 +67,15 @@ The output folder will contain:
 - `edited.mp4`: video with silent parts removed and clean audio attached.
 - `edited.srt`: captions, if captions are enabled.
 - `segments.json`: the edit decision list used for the cut.
+
+Extract audio from a MOV file:
+
+```bash
+python3 yt_auto_edit.py extract-audio \
+  --video ./input/phone_video.mov \
+  --out ./output/extracted_audio.wav \
+  --format wav
+```
 
 ## Useful Options
 
