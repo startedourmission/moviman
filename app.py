@@ -253,7 +253,7 @@ def page(*, error=None, result=None, log=None):
           </label>
           <label>
             외부 오디오 파일
-            <input type="file" name="audio" accept=".wav,.m4a,.mp3,.aac,audio/*" required>
+            <input type="file" name="audio" accept=".wav,.m4a,.mp3,.aac,audio/*">
           </label>
           <div class="row">
             <label>
@@ -320,7 +320,7 @@ def page(*, error=None, result=None, log=None):
         </section>
         <section>
           <h2>추천값</h2>
-          <p class="muted">말 사이를 자연스럽게 자르려면 -38dB, 0.6, 0.16부터 시작하세요. 너무 많이 잘리면 무음 기준을 -42dB로 낮추고 앞뒤 여유를 늘리면 됩니다.</p>
+          <p class="muted">외부 오디오를 넣지 않으면 영상 안의 오디오를 기준으로 자릅니다. 말 사이를 자연스럽게 자르려면 -38dB, 0.6, 0.16부터 시작하세요. 너무 많이 잘리면 무음 기준을 -42dB로 낮추고 앞뒤 여유를 늘리면 됩니다.</p>
         </section>
       </div>
     </div>
@@ -356,7 +356,7 @@ def parse_multipart(headers, body):
         name = part.get_param("name", header="content-disposition")
         filename = part.get_filename()
         payload = part.get_payload(decode=True) or b""
-        if filename:
+        if filename and payload:
             files[name] = {
                 "filename": safe_filename(filename),
                 "content": payload,
@@ -436,12 +436,11 @@ class Handler(BaseHTTPRequestHandler):
         return parse_multipart(self.headers, body)
 
     def handle_process(self, fields, files):
-        if "video" not in files or "audio" not in files:
-            raise ValueError("영상 파일과 오디오 파일이 필요합니다.")
+        if "video" not in files:
+            raise ValueError("영상 파일이 필요합니다.")
 
         run_id, run_dir = make_run_dir("edit")
         video_path = save_upload(files["video"], run_dir / "input")
-        audio_path = save_upload(files["audio"], run_dir / "input")
         out_dir = run_dir / "output"
 
         cmd = [
@@ -450,8 +449,6 @@ class Handler(BaseHTTPRequestHandler):
             "process",
             "--video",
             str(video_path),
-            "--audio",
-            str(audio_path),
             "--out",
             str(out_dir),
             "--silence-threshold",
@@ -467,6 +464,9 @@ class Handler(BaseHTTPRequestHandler):
             "--language",
             fields.get("language", "ko"),
         ]
+        if "audio" in files:
+            audio_path = save_upload(files["audio"], run_dir / "input")
+            cmd.extend(["--audio", str(audio_path)])
         log = run_command(cmd)
         self.send_html(
             page(

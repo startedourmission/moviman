@@ -116,9 +116,10 @@ def merge_segments(segments):
     return merged
 
 
-def build_filter(segments, audio_offset):
+def build_filter(segments, audio_offset, external_audio):
     pieces = []
     concat_inputs = []
+    audio_input = "1:a" if external_audio else "0:a"
 
     for index, (start, end) in enumerate(segments):
         audio_start = max(0.0, start - audio_offset)
@@ -128,7 +129,7 @@ def build_filter(segments, audio_offset):
             f"setpts=PTS-STARTPTS[v{index}]"
         )
         pieces.append(
-            f"[1:a]atrim=start={audio_start:.6f}:end={audio_end:.6f},"
+            f"[{audio_input}]atrim=start={audio_start:.6f}:end={audio_end:.6f},"
             f"asetpts=PTS-STARTPTS[a{index}]"
         )
         concat_inputs.append(f"[v{index}][a{index}]")
@@ -144,16 +145,19 @@ def render_video(video_path, audio_path, output_path, segments, audio_offset):
     if not segments:
         raise SystemExit("No kept segments were detected. Try a less aggressive silence threshold.")
 
-    filter_complex = build_filter(segments, audio_offset)
-    run(
+    external_audio = audio_path is not None
+    filter_complex = build_filter(segments, audio_offset, external_audio)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-i",
+        str(video_path),
+    ]
+    if external_audio:
+        cmd.extend(["-i", str(audio_path)])
+    cmd.extend(
         [
-            "ffmpeg",
-            "-y",
-            "-hide_banner",
-            "-i",
-            str(video_path),
-            "-i",
-            str(audio_path),
             "-filter_complex",
             filter_complex,
             "-map",
@@ -175,6 +179,7 @@ def render_video(video_path, audio_path, output_path, segments, audio_offset):
             str(output_path),
         ]
     )
+    run(cmd)
 
 
 def srt_timestamp(seconds):
@@ -203,7 +208,7 @@ def generate_captions_faster_whisper(video_path, srt_path, language, model_size)
         from faster_whisper import WhisperModel
     except ImportError as exc:
         raise SystemExit(
-            "faster-whisper is not installed. Run: pip install -r requirements.txt"
+            "faster-whisper is not installed. Run: uv sync --extra captions"
         ) from exc
 
     model = WhisperModel(model_size, device="auto", compute_type="auto")
@@ -278,25 +283,33 @@ def process(args):
     require_tool("ffprobe")
 
     video_path = Path(args.video).expanduser().resolve()
-    audio_path = Path(args.audio).expanduser().resolve()
+    audio_path = Path(args.audio).expanduser().resolve() if args.audio else None
     out_dir = Path(args.out).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if not video_path.exists():
         raise SystemExit(f"Video not found: {video_path}")
-    if not audio_path.exists():
+    if audio_path is not None and not audio_path.exists():
         raise SystemExit(f"Audio not found: {audio_path}")
 
     video_duration = ffprobe_duration(video_path)
-    audio_duration = ffprobe_duration(audio_path)
-    start_time = max(0.0, args.audio_offset)
-    end_time = min(video_duration, audio_duration + args.audio_offset)
+    if audio_path is None:
+        source_audio_path = video_path
+        audio_offset = 0.0
+        start_time = 0.0
+        end_time = video_duration
+    else:
+        source_audio_path = audio_path
+        audio_offset = args.audio_offset
+        audio_duration = ffprobe_duration(audio_path)
+        start_time = max(0.0, audio_offset)
+        end_time = min(video_duration, audio_duration + audio_offset)
     if not math.isfinite(end_time) or end_time <= start_time:
         raise SystemExit("Could not determine a valid media duration.")
 
-    silences = detect_silences(audio_path, args.silence_threshold, args.min_silence)
+    silences = detect_silences(source_audio_path, args.silence_threshold, args.min_silence)
     timeline_silences = [
-        (start + args.audio_offset, end + args.audio_offset)
+        (start + audio_offset, end + audio_offset)
         for start, end in silences
     ]
     segments = invert_silences(
@@ -312,7 +325,8 @@ def process(args):
         json.dumps(
             {
                 "video": str(video_path),
-                "audio": str(audio_path),
+                "audio": str(audio_path) if audio_path is not None else None,
+                "audio_source": "external" if audio_path is not None else "video",
                 "silences": silences,
                 "timeline_silences": timeline_silences,
                 "kept_segments": segments,
@@ -321,7 +335,7 @@ def process(args):
                     "min_silence": args.min_silence,
                     "padding": args.padding,
                     "min_keep": args.min_keep,
-                    "audio_offset": args.audio_offset,
+                    "audio_offset": audio_offset,
                 },
             },
             indent=2,
@@ -330,7 +344,7 @@ def process(args):
     )
 
     edited_path = out_dir / args.output_name
-    render_video(video_path, audio_path, edited_path, segments, args.audio_offset)
+    render_video(video_path, audio_path, edited_path, segments, audio_offset)
 
     if args.captions == "faster-whisper":
         generate_captions_faster_whisper(
@@ -370,7 +384,7 @@ def parse_args(argv=None):
 
     process_parser = subparsers.add_parser("process")
     process_parser.add_argument("--video", required=True)
-    process_parser.add_argument("--audio", required=True)
+    process_parser.add_argument("--audio")
     process_parser.add_argument("--out", default="./output")
     process_parser.add_argument("--output-name", default="edited.mp4")
     process_parser.add_argument("--silence-threshold", default="-36dB")

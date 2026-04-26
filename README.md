@@ -5,7 +5,8 @@ Small YouTube editing automation for a workflow where video is recorded on a pho
 ## What It Does
 
 - Replaces the phone audio with the separate GarageBand audio.
-- Detects silent parts in the external audio.
+- Uses the video's built-in audio when no separate audio file is provided.
+- Detects silent parts in the selected audio source.
 - Cuts those silent parts from both video and audio.
 - Optionally generates Korean/English captions as `.srt`.
 
@@ -40,6 +41,7 @@ http://127.0.0.1:5177
 The web UI can:
 
 - Upload a phone video and separate audio file.
+- Upload only a phone video when the video's built-in audio should be used.
 - Cut silent sections and render `edited.mp4`.
 - Generate `edited.srt` when captions are enabled.
 - Extract WAV or M4A audio from a MOV/MP4 file.
@@ -59,10 +61,18 @@ Put your files somewhere convenient, then run:
 ```bash
 uv run python yt_auto_edit.py process \
   --video ./input/phone_video.mov \
-  --audio ./input/garageband_audio.m4a \
   --out ./output \
   --language ko \
   --captions faster-whisper
+```
+
+Use a separate GarageBand audio file when you have one:
+
+```bash
+uv run python yt_auto_edit.py process \
+  --video ./input/phone_video.mov \
+  --audio ./input/garageband_audio.m4a \
+  --out ./output
 ```
 
 The output folder will contain:
