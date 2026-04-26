@@ -17,23 +17,18 @@ Install `ffmpeg` first:
 brew install ffmpeg
 ```
 
-For local caption generation, install Python dependencies:
+Install `uv` if you do not already have it:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+brew install uv
 ```
-
-`faster-whisper` downloads a speech model the first time it runs.
 
 ## Quick Start
 
 Run the local web app:
 
 ```bash
-source .venv/bin/activate
-python3 app.py
+uv run python app.py
 ```
 
 Then open:
@@ -49,12 +44,20 @@ The web UI can:
 - Generate `edited.srt` when captions are enabled.
 - Extract WAV or M4A audio from a MOV/MP4 file.
 
+For local caption generation, install the optional caption dependencies:
+
+```bash
+uv sync --extra captions
+```
+
+`faster-whisper` downloads a speech model the first time it runs.
+
 ## CLI
 
 Put your files somewhere convenient, then run:
 
 ```bash
-python3 yt_auto_edit.py process \
+uv run python yt_auto_edit.py process \
   --video ./input/phone_video.mov \
   --audio ./input/garageband_audio.m4a \
   --out ./output \
@@ -71,7 +74,7 @@ The output folder will contain:
 Extract audio from a MOV file:
 
 ```bash
-python3 yt_auto_edit.py extract-audio \
+uv run python yt_auto_edit.py extract-audio \
   --video ./input/phone_video.mov \
   --out ./output/extracted_audio.wav \
   --format wav
@@ -82,7 +85,7 @@ python3 yt_auto_edit.py extract-audio \
 Tune silence cutting:
 
 ```bash
-python3 yt_auto_edit.py process \
+uv run python yt_auto_edit.py process \
   --video phone.mov \
   --audio garageband.m4a \
   --silence-threshold=-38dB \
@@ -98,7 +101,7 @@ If the cut feels too aggressive, lower the threshold or increase padding:
 If the video and audio do not start at exactly the same time, pass an offset:
 
 ```bash
-python3 yt_auto_edit.py process \
+uv run python yt_auto_edit.py process \
   --video phone.mov \
   --audio garageband.m4a \
   --audio-offset 1.25

@@ -1,0 +1,13 @@
+[project]
+name = "moviman"
+version = "0.1.0"
+description = "Local YouTube editing automation for silent cuts, external audio, and captions."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+captions = [
+  "faster-whisper>=1.0.0",
+]
+
