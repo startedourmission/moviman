@@ -71,16 +71,19 @@ def shell():
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>moviman</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
   <header class="appbar">
     <div class="wrap appbar-inner">
-      <div>
-        <h1>moviman</h1>
-        <p class="subtitle">Local video automation console</p>
+      <div class="brand-lockup">
+        <span class="brand-mark">M</span>
+        <div>
+          <h1>moviman</h1>
+          <p class="subtitle">Cut review studio</p>
+        </div>
       </div>
-      <div class="server-badge">127.0.0.1:5177</div>
+      <div class="server-badge">local · 127.0.0.1:5177</div>
     </div>
   </header>
 """
@@ -101,27 +104,37 @@ def page(*, error=None, log=None):
     return shell() + f"""
   <main class="wrap workspace">
     {error_html}
-    <section class="panel primary-panel">
-      <div class="panel-heading">
+    <section class="panel primary-panel intake-panel">
+      <div class="panel-heading hero-heading">
         <div>
-          <h2>편집 작업</h2>
-          <p>영상만 넣거나, 별도 오디오를 같이 넣어서 컷 편집합니다.</p>
+          <span class="eyebrow">Analyze first · Render after review</span>
+          <h2>영상 올리고 컷 후보부터 확인</h2>
+          <p>무음 구간을 먼저 찾아서 리뷰 화면에 올립니다. 체크한 컷만 최종 렌더에 반영됩니다.</p>
         </div>
-        <span class="tag">MP4 / MOV</span>
+        <span class="tag">MOV / MP4</span>
       </div>
 
-      <form action="/process" method="post" enctype="multipart/form-data" class="form-grid">
-        <label class="field span-2">
+      <div class="workflow-strip" aria-label="workflow">
+        <span><strong>1</strong> 업로드</span>
+        <span><strong>2</strong> 컷 분석</span>
+        <span><strong>3</strong> 리뷰</span>
+        <span><strong>4</strong> 렌더</span>
+      </div>
+
+      <form action="/process" method="post" enctype="multipart/form-data" class="form-grid edit-form">
+        <label class="field file-field span-2">
           <span>영상 파일</span>
           <input type="file" name="video" accept=".mov,.mp4,.m4v,video/*" required>
+          <small>폰/OBS 영상 파일을 넣습니다. 오디오는 영상 안의 트랙을 기본으로 씁니다.</small>
         </label>
 
-        <label class="field span-2">
+        <label class="field file-field span-2">
           <span>외부 오디오 파일</span>
           <input type="file" name="audio" accept=".wav,.m4a,.mp3,.aac,audio/*">
           <small>비워두면 영상 안의 오디오를 사용합니다.</small>
         </label>
 
+        <div class="section-label span-2">컷 감지</div>
         <label class="field">
           <span>무음 기준</span>
           <input name="silence_threshold" value="-45dB">
@@ -142,6 +155,7 @@ def page(*, error=None, log=None):
           <input name="audio_offset" type="number" step="0.01" value="0">
         </label>
 
+        <div class="section-label span-2">출력</div>
         <label class="field">
           <span>캡션</span>
           <select name="captions">
@@ -171,14 +185,14 @@ def page(*, error=None, log=None):
         </label>
 
         <div class="action-row span-2">
-          <button type="submit" class="button primary">처리 시작</button>
-          <span class="run-note">결과는 runs 폴더에 저장되고 완료 후 다운로드할 수 있습니다.</span>
+          <button type="submit" class="button primary">컷 후보 분석</button>
+          <span class="run-note">분석 후 리뷰 화면에서 삭제할 컷을 고릅니다.</span>
         </div>
       </form>
     </section>
 
     <aside class="side-stack">
-      <section class="panel">
+      <section class="panel utility-panel">
         <div class="panel-heading compact">
           <div>
             <h2>오디오 추출</h2>
@@ -202,7 +216,12 @@ def page(*, error=None, log=None):
       </section>
 
       <section class="panel metrics-panel">
-        <h2>기준값</h2>
+        <div class="panel-heading compact">
+          <div>
+            <h2>프리셋 기준값</h2>
+            <p>영상 성격에 맞춰 숫자만 바꿔서 시작합니다.</p>
+          </div>
+        </div>
         <dl>
           <div><dt>기본값</dt><dd>-45dB / 0.6 / 0.16</dd></div>
           <div><dt>덜 자르기</dt><dd>-50dB / 0.8 / 0.25</dd></div>
@@ -243,7 +262,7 @@ def job_page(run_id, title):
     </section>
   </main>
   <script>window.movimanRunId = "{escaped_run_id}";</script>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>"""
 
@@ -286,7 +305,7 @@ def review_page(run_id, analysis):
       </form>
     </section>
   </main>
-  <script src="/static/review.js"></script>
+  <script src="/static/review.js?v=4"></script>
 </body>
 </html>"""
 
