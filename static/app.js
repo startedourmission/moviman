@@ -6,6 +6,7 @@ const stage = document.getElementById("stage");
 const downloads = document.getElementById("downloads");
 const reviewLink = document.getElementById("review-link");
 const log = document.getElementById("log");
+let redirectedToReview = false;
 
 function formatElapsed(seconds) {
   const value = Math.max(0, Math.floor(seconds || 0));
@@ -34,7 +35,12 @@ function render(data) {
   log.textContent = data.log || "";
   if (data.files && data.files.length) renderDownloads(data.files);
   if (data.review_url) {
-    reviewLink.innerHTML = `<a class="button primary" href="${data.review_url}">컷 후보 검토</a>`;
+    reviewLink.innerHTML = `<a class="button primary" href="${data.review_url}">에디터 열기</a>`;
+    if (data.state === "done" && !redirectedToReview) {
+      redirectedToReview = true;
+      window.location.href = data.review_url;
+      return;
+    }
   }
   if (data.state !== "done" && data.state !== "error") {
     setTimeout(poll, 700);

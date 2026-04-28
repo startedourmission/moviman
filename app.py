@@ -71,7 +71,7 @@ def shell():
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>moviman</title>
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
   <header class="appbar">
@@ -262,13 +262,16 @@ def job_page(run_id, title):
     </section>
   </main>
   <script>window.movimanRunId = "{escaped_run_id}";</script>
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>"""
 
 
 def review_page(run_id, analysis):
     cuts = analysis.get("cuts", [])
+    duration = float(analysis.get("duration", 0.0))
+    video_name = Path(analysis["video"]).name
+    cuts_json = escape(json.dumps(cuts))
     rows = []
     for cut in cuts:
         checked = "checked" if cut.get("enabled", True) else ""
@@ -276,7 +279,7 @@ def review_page(run_id, analysis):
         end = float(cut["end"])
         rows.append(
             f"""
-            <label class="cut-row">
+            <label class="cut-row" data-cut-row="{escape(cut['id'])}">
               <input type="checkbox" name="cut" value="{escape(cut['id'])}" {checked}>
               <span class="cut-time">{format_time(start)} - {format_time(end)}</span>
               <span class="cut-duration">{end - start:.1f}s</span>
@@ -285,27 +288,56 @@ def review_page(run_id, analysis):
         )
     rows_html = "\n".join(rows) if rows else '<p class="empty-state">자동 컷 후보가 없습니다.</p>'
     return shell() + f"""
-  <main class="wrap review-shell">
-    <section class="panel review-panel">
-      <div class="panel-heading">
-        <div>
-          <h2>컷 후보 리뷰</h2>
-          <p>체크된 구간이 최종 렌더에서 삭제됩니다.</p>
-        </div>
-        <span class="tag">{len(cuts)} cuts</span>
+  <main class="editor-shell" data-duration="{duration:.6f}" data-cuts="{cuts_json}">
+    <section class="editor-topbar">
+      <div>
+        <h2>moviman editor</h2>
+        <p>컷 구간을 타임라인에서 확인하고 바로 수정합니다.</p>
       </div>
-      <video class="preview-video" controls src="/media/{escape(run_id)}/input/{escape(Path(analysis['video']).name)}"></video>
-      <form action="/render/{escape(run_id)}" method="post" class="review-form">
-        <div class="cut-list">{rows_html}</div>
-        <div class="action-row">
-          <button type="button" class="button secondary" data-action="select-all">전체 선택</button>
-          <button type="button" class="button secondary" data-action="select-none">전체 해제</button>
-          <button type="submit" class="button primary">선택대로 렌더</button>
-        </div>
-      </form>
+      <a class="button secondary" href="/">새 작업</a>
     </section>
+
+    <section class="editor-stage">
+      <div class="viewer-panel">
+        <video id="editor-video" class="editor-video" controls src="/media/{escape(run_id)}/input/{escape(video_name)}"></video>
+      </div>
+      <aside class="inspector-panel">
+        <div>
+          <span class="eyebrow">Inspector</span>
+          <h2>삭제 컷</h2>
+          <p>켜진 컷만 최종 렌더에서 빠집니다.</p>
+        </div>
+        <div class="cut-list">{rows_html}</div>
+      </aside>
+    </section>
+
+    <form action="/render/{escape(run_id)}" method="post" class="review-form editor-timeline-form">
+      <section class="timeline-panel">
+        <div class="timeline-toolbar">
+          <div class="transport">
+            <button type="button" class="icon-button" data-action="back" title="뒤로">-5s</button>
+            <button type="button" class="button secondary" data-action="play">재생</button>
+            <button type="button" class="icon-button" data-action="forward" title="앞으로">+5s</button>
+            <span class="timecode" id="timecode">00:00.00</span>
+          </div>
+          <div class="timeline-actions">
+            <button type="button" class="button secondary" data-action="split">현재 위치 컷 추가</button>
+            <button type="button" class="button secondary" data-action="select-all">전체 선택</button>
+            <button type="button" class="button secondary" data-action="select-none">전체 해제</button>
+            <button type="submit" class="button primary">선택대로 렌더</button>
+          </div>
+        </div>
+        <div class="timeline-ruler" id="timeline-ruler">
+          <div class="timeline-track" id="timeline-track"></div>
+          <div class="timeline-playhead" id="timeline-playhead"></div>
+        </div>
+        <div class="action-row">
+          <span class="run-note">주황색 블록은 삭제될 컷입니다. 타임라인을 클릭하면 영상 위치가 이동합니다.</span>
+        </div>
+      </section>
+    </form>
   </main>
-  <script src="/static/review.js?v=4"></script>
+  <script src="/static/review.js?v=5"></script>
 </body>
 </html>"""
 
@@ -642,9 +674,31 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
 
-        enabled_ids = set(fields.get("enabled_cuts", "").split(",")) if fields.get("enabled_cuts") else set()
-        for cut in analysis.get("cuts", []):
-            cut["enabled"] = cut["id"] in enabled_ids
+        if fields.get("cuts_json"):
+            try:
+                posted_cuts = json.loads(fields["cuts_json"])
+            except json.JSONDecodeError as exc:
+                raise ValueError("컷 데이터가 올바르지 않습니다.") from exc
+            cleaned_cuts = []
+            for index, cut in enumerate(posted_cuts):
+                start = max(0.0, float(cut.get("start", 0.0)))
+                end = min(float(analysis.get("duration", 0.0)), float(cut.get("end", start)))
+                if end <= start:
+                    continue
+                cleaned_cuts.append(
+                    {
+                        "id": safe_filename(cut.get("id") or f"cut_{index + 1:04d}", f"cut_{index + 1:04d}"),
+                        "start": start,
+                        "end": end,
+                        "enabled": bool(cut.get("enabled", True)),
+                        "reason": str(cut.get("reason") or "manual"),
+                    }
+                )
+            analysis["cuts"] = sorted(cleaned_cuts, key=lambda item: item["start"])
+        else:
+            enabled_ids = set(fields.get("enabled_cuts", "").split(",")) if fields.get("enabled_cuts") else set()
+            for cut in analysis.get("cuts", []):
+                cut["enabled"] = cut["id"] in enabled_ids
         analysis_path.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
 
         render_id, render_dir = make_run_dir("render")
