@@ -3,11 +3,11 @@ name = "moviman"
 version = "0.1.0"
 description = "Local YouTube editing automation for silent cuts, external audio, and captions."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = []
 
 [project.optional-dependencies]
 captions = [
   "faster-whisper>=1.0.0",
+  "onnxruntime<1.23; sys_platform == 'darwin' and platform_machine == 'x86_64'",
 ]
-

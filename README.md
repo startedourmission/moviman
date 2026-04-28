@@ -52,7 +52,7 @@ The visual rules are documented in `DESIGN.md`.
 For local caption generation, install the optional caption dependencies:
 
 ```bash
-uv sync --extra captions
+uv sync --extra captions --python 3.13
 ```
 
 `faster-whisper` downloads a speech model the first time it runs.
