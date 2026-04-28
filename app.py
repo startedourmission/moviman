@@ -159,6 +159,17 @@ def page(*, error=None, log=None):
           </select>
         </label>
 
+        <label class="field span-2">
+          <span>렌더 속도</span>
+          <select name="encode_mode">
+            <option value="fast">빠름</option>
+            <option value="fastest">가장 빠름</option>
+            <option value="hardware">하드웨어</option>
+            <option value="quality">품질 우선</option>
+          </select>
+          <small>빠름은 기본값입니다. 하드웨어는 Mac의 VideoToolbox를 사용합니다.</small>
+        </label>
+
         <div class="action-row span-2">
           <button type="submit" class="button primary">처리 시작</button>
           <span class="run-note">결과는 runs 폴더에 저장되고 완료 후 다운로드할 수 있습니다.</span>
@@ -435,6 +446,8 @@ class Handler(BaseHTTPRequestHandler):
             fields.get("captions", "none"),
             "--language",
             fields.get("language", "ko"),
+            "--encode-mode",
+            fields.get("encode_mode", "fast"),
         ]
         if "audio" in files:
             audio_path = save_upload(files["audio"], run_dir / "input")

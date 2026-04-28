@@ -75,7 +75,8 @@ Use a separate GarageBand audio file when you have one:
 uv run python yt_auto_edit.py process \
   --video ./input/phone_video.mov \
   --audio ./input/garageband_audio.m4a \
-  --out ./output
+  --out ./output \
+  --encode-mode fast
 ```
 
 The output folder will contain:
@@ -121,6 +122,25 @@ uv run python yt_auto_edit.py process \
 ```
 
 `--audio-offset 1.25` means the external audio starts 1.25 seconds after the video timeline. Use a negative value if the external audio started before the video.
+
+## Speed
+
+Rendering is fastest when captions are disabled. Use `--encode-mode fast` or `--encode-mode fastest` for quicker exports:
+
+```bash
+uv run python yt_auto_edit.py process \
+  --video phone.mov \
+  --out ./output \
+  --captions none \
+  --encode-mode fastest
+```
+
+Available modes:
+
+- `fast`: good default, faster than the old quality setting.
+- `fastest`: lowest CPU time, larger/lower-quality files.
+- `hardware`: uses macOS VideoToolbox when available.
+- `quality`: slower `libx264` setting.
 
 ## Recommended Recording Workflow
 

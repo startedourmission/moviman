@@ -177,7 +177,45 @@ def build_filter(segments, audio_offset, external_audio):
     return ";".join(pieces)
 
 
-def render_video(video_path, audio_path, output_path, segments, audio_offset):
+def is_full_length_segment(segments, start_time, end_time):
+    if len(segments) != 1:
+        return False
+    start, end = segments[0]
+    return abs(start - start_time) < 0.01 and abs(end - end_time) < 0.01
+
+
+def video_encode_args(mode):
+    if mode == "quality":
+        return ["-c:v", "libx264", "-preset", "medium", "-crf", "18"]
+    if mode == "fastest":
+        return ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28"]
+    if mode == "hardware":
+        return ["-c:v", "h264_videotoolbox", "-b:v", "6000k", "-allow_sw", "1"]
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]
+
+
+def copy_full_video(video_path, output_path):
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-i",
+            str(video_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ]
+    )
+
+
+def render_video(video_path, audio_path, output_path, segments, audio_offset, encode_mode):
     external_audio = audio_path is not None
     filter_complex = build_filter(segments, audio_offset, external_audio)
     cmd = [
@@ -197,12 +235,7 @@ def render_video(video_path, audio_path, output_path, segments, audio_offset):
             "[outv]",
             "-map",
             "[outa]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-crf",
-            "18",
+            *video_encode_args(encode_mode),
             "-c:a",
             "aac",
             "-b:a",
@@ -384,6 +417,7 @@ def process(args):
                     "padding": args.padding,
                     "min_keep": args.min_keep,
                     "audio_offset": audio_offset,
+                    "encode_mode": args.encode_mode,
                 },
             },
             indent=2,
@@ -392,12 +426,23 @@ def process(args):
     )
 
     edited_path = out_dir / args.output_name
-    if fallback_reason:
+    can_copy = (
+        audio_path is None
+        and audio_offset == 0
+        and is_full_length_segment(segments, start_time, end_time)
+    )
+    if can_copy:
+        if fallback_reason:
+            print(fallback_reason)
+        write_progress(70, "Copying media without re-encoding")
+        copy_full_video(video_path, edited_path)
+    elif fallback_reason:
         print(fallback_reason)
-        write_progress(38, "Rendering full media")
+        write_progress(38, f"Rendering full media ({args.encode_mode})")
+        render_video(video_path, audio_path, edited_path, segments, audio_offset, args.encode_mode)
     else:
-        write_progress(38, "Rendering edited video")
-    render_video(video_path, audio_path, edited_path, segments, audio_offset)
+        write_progress(38, f"Rendering edited video ({args.encode_mode})")
+        render_video(video_path, audio_path, edited_path, segments, audio_offset, args.encode_mode)
 
     if args.captions == "faster-whisper":
         write_progress(88, "Generating captions")
@@ -448,6 +493,11 @@ def parse_args(argv=None):
     process_parser.add_argument("--padding", type=float, default=0.14)
     process_parser.add_argument("--min-keep", type=float, default=0.2)
     process_parser.add_argument("--audio-offset", type=float, default=0.0)
+    process_parser.add_argument(
+        "--encode-mode",
+        choices=["fast", "fastest", "quality", "hardware"],
+        default="fast",
+    )
     process_parser.add_argument(
         "--captions",
         choices=["none", "faster-whisper", "whisper-cli"],
