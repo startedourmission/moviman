@@ -4,6 +4,7 @@ const percent = document.getElementById("percent");
 const elapsed = document.getElementById("elapsed");
 const stage = document.getElementById("stage");
 const downloads = document.getElementById("downloads");
+const reviewLink = document.getElementById("review-link");
 const log = document.getElementById("log");
 
 function formatElapsed(seconds) {
@@ -32,6 +33,9 @@ function render(data) {
   stage.className = data.state === "error" ? "error-text" : "";
   log.textContent = data.log || "";
   if (data.files && data.files.length) renderDownloads(data.files);
+  if (data.review_url) {
+    reviewLink.innerHTML = `<a class="button primary" href="${data.review_url}">컷 후보 검토</a>`;
+  }
   if (data.state !== "done" && data.state !== "error") {
     setTimeout(poll, 700);
   }

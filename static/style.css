@@ -269,8 +269,17 @@ a:focus {
   padding: 28px 0 48px;
 }
 
+.review-shell {
+  max-width: 980px;
+  padding: 24px 0 48px;
+}
+
 .job-panel {
   padding: 20px;
+}
+
+.review-panel {
+  padding: 18px;
 }
 
 .job-head,
@@ -314,6 +323,67 @@ a:focus {
   gap: 10px;
   flex-wrap: wrap;
   margin-top: 18px;
+}
+
+.review-link {
+  margin-top: 14px;
+}
+
+.preview-video {
+  width: 100%;
+  max-height: 440px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0f1419;
+}
+
+.review-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.cut-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.cut-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 80px;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.cut-row input {
+  min-height: auto;
+}
+
+.cut-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.cut-duration {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.empty-state {
+  padding: 18px;
+  color: var(--muted);
 }
 
 pre {

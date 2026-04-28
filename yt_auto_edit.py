@@ -248,6 +248,213 @@ def render_video(video_path, audio_path, output_path, segments, audio_offset, en
     run(cmd)
 
 
+def cut_segments_from_keep(keep_segments, start_time, end_time):
+    cuts = []
+    cursor = start_time
+    for start, end in keep_segments:
+        if start > cursor:
+            cuts.append((cursor, start))
+        cursor = max(cursor, end)
+    if cursor < end_time:
+        cuts.append((cursor, end_time))
+    return cuts
+
+
+def keep_segments_from_cuts(cuts, start_time, end_time, padding, min_keep):
+    normalized = []
+    for cut in cuts:
+        if not cut.get("enabled", True):
+            continue
+        start = max(start_time, float(cut["start"]) - padding)
+        end = min(end_time, float(cut["end"]) + padding)
+        if end > start:
+            normalized.append((start, end))
+    normalized = merge_segments(sorted(normalized))
+
+    keep = []
+    cursor = start_time
+    for start, end in normalized:
+        if start - cursor >= min_keep:
+            keep.append((cursor, start))
+        cursor = max(cursor, end)
+    if end_time - cursor >= min_keep:
+        keep.append((cursor, end_time))
+    return keep
+
+
+def analyze_media(args):
+    write_progress(3, "Preparing analysis")
+    require_tool("ffmpeg")
+    require_tool("ffprobe")
+
+    video_path = Path(args.video).expanduser().resolve()
+    audio_path = Path(args.audio).expanduser().resolve() if args.audio else None
+    out_dir = Path(args.out).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not video_path.exists():
+        raise SystemExit(f"Video not found: {video_path}")
+    if audio_path is not None and not audio_path.exists():
+        raise SystemExit(f"Audio not found: {audio_path}")
+
+    write_progress(10, "Reading media duration")
+    video_duration = ffprobe_duration(video_path)
+    if audio_path is None:
+        source_audio_path = video_path
+        audio_offset = 0.0
+        start_time = 0.0
+        end_time = video_duration
+    else:
+        source_audio_path = audio_path
+        audio_offset = args.audio_offset
+        audio_duration = ffprobe_duration(audio_path)
+        start_time = max(0.0, audio_offset)
+        end_time = min(video_duration, audio_duration + audio_offset)
+    if not math.isfinite(end_time) or end_time <= start_time:
+        raise SystemExit("Could not determine a valid media duration.")
+
+    write_progress(30, "Detecting silence")
+    silences = detect_silences(source_audio_path, args.silence_threshold, args.min_silence)
+    timeline_silences = [
+        (start + audio_offset, end + audio_offset)
+        for start, end in silences
+    ]
+    keep_segments = invert_silences(
+        timeline_silences,
+        start_time,
+        end_time,
+        args.padding,
+        args.min_keep,
+    )
+    fallback_reason = None
+    if not keep_segments:
+        fallback_reason = (
+            "Silence detection marked the whole source as silent; "
+            "no cut candidates were enabled."
+        )
+        keep_segments = [(start_time, end_time)]
+        cut_segments = []
+    else:
+        cut_segments = cut_segments_from_keep(keep_segments, start_time, end_time)
+
+    analysis = {
+        "version": 1,
+        "video": str(video_path),
+        "audio": str(audio_path) if audio_path is not None else None,
+        "audio_source": "external" if audio_path is not None else "video",
+        "duration": video_duration,
+        "start_time": start_time,
+        "end_time": end_time,
+        "silences": silences,
+        "timeline_silences": timeline_silences,
+        "keep_segments": keep_segments,
+        "fallback_reason": fallback_reason,
+        "settings": {
+            "silence_threshold": args.silence_threshold,
+            "min_silence": args.min_silence,
+            "padding": args.padding,
+            "min_keep": args.min_keep,
+            "audio_offset": audio_offset,
+            "encode_mode": args.encode_mode,
+            "captions": args.captions,
+            "language": args.language,
+            "whisper_model": args.whisper_model,
+        },
+        "cuts": [
+            {
+                "id": f"cut_{index:04d}",
+                "start": start,
+                "end": end,
+                "enabled": True,
+                "reason": "silence",
+            }
+            for index, (start, end) in enumerate(cut_segments, start=1)
+        ],
+    }
+    analysis_path = out_dir / "analysis.json"
+    analysis_path.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
+    write_progress(100, "Analysis ready")
+    print(f"Analysis: {analysis_path}")
+
+
+def render_from_analysis(args):
+    write_progress(3, "Preparing render")
+    analysis_path = Path(args.analysis).expanduser().resolve()
+    out_dir = Path(args.out).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+
+    video_path = Path(analysis["video"]).resolve()
+    audio_path = Path(analysis["audio"]).resolve() if analysis.get("audio") else None
+    settings = analysis.get("settings", {})
+    start_time = float(analysis.get("start_time", 0.0))
+    end_time = float(analysis.get("end_time", analysis["duration"]))
+    min_keep = float(settings.get("min_keep", 0.2))
+    audio_offset = float(settings.get("audio_offset", 0.0))
+    encode_mode = args.encode_mode or settings.get("encode_mode", "fast")
+    captions = args.captions or settings.get("captions", "none")
+    language = args.language or settings.get("language", "ko")
+    whisper_model = args.whisper_model or settings.get("whisper_model", "small")
+
+    segments = keep_segments_from_cuts(
+        analysis.get("cuts", []),
+        start_time,
+        end_time,
+        0.0,
+        min_keep,
+    )
+    if not segments:
+        segments = [(start_time, end_time)]
+
+    segments_json = out_dir / "segments.json"
+    segments_json.write_text(
+        json.dumps(
+            {
+                **analysis,
+                "kept_segments": segments,
+                "settings": {
+                    **settings,
+                    "encode_mode": encode_mode,
+                    "captions": captions,
+                    "language": language,
+                    "whisper_model": whisper_model,
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    edited_path = out_dir / args.output_name
+    can_copy = (
+        audio_path is None
+        and audio_offset == 0
+        and is_full_length_segment(segments, start_time, end_time)
+    )
+    if can_copy:
+        write_progress(70, "Copying media without re-encoding")
+        copy_full_video(video_path, edited_path)
+    else:
+        write_progress(38, f"Rendering edited video ({encode_mode})")
+        render_video(video_path, audio_path, edited_path, segments, audio_offset, encode_mode)
+
+    if captions == "faster-whisper":
+        write_progress(88, "Generating captions")
+        generate_captions_faster_whisper(
+            edited_path,
+            out_dir / "edited.srt",
+            language,
+            whisper_model,
+        )
+    elif captions == "whisper-cli":
+        write_progress(88, "Generating captions")
+        generate_captions_whisper_cli(edited_path, out_dir / "edited.srt", language)
+
+    write_progress(100, "Done")
+    print(f"Done: {edited_path}")
+    print(f"Edit decision list: {segments_json}")
+
+
 def srt_timestamp(seconds):
     seconds = max(0.0, seconds)
     millis = int(round(seconds * 1000))
@@ -506,6 +713,45 @@ def parse_args(argv=None):
     process_parser.add_argument("--language", default="ko")
     process_parser.add_argument("--whisper-model", default="small")
     process_parser.set_defaults(func=process)
+
+    analyze_parser = subparsers.add_parser("analyze")
+    analyze_parser.add_argument("--video", required=True)
+    analyze_parser.add_argument("--audio")
+    analyze_parser.add_argument("--out", default="./output")
+    analyze_parser.add_argument("--silence-threshold", default="-45dB")
+    analyze_parser.add_argument("--min-silence", type=float, default=0.6)
+    analyze_parser.add_argument("--padding", type=float, default=0.16)
+    analyze_parser.add_argument("--min-keep", type=float, default=0.2)
+    analyze_parser.add_argument("--audio-offset", type=float, default=0.0)
+    analyze_parser.add_argument(
+        "--encode-mode",
+        choices=["fast", "fastest", "quality", "hardware"],
+        default="fast",
+    )
+    analyze_parser.add_argument(
+        "--captions",
+        choices=["none", "faster-whisper", "whisper-cli"],
+        default="none",
+    )
+    analyze_parser.add_argument("--language", default="ko")
+    analyze_parser.add_argument("--whisper-model", default="small")
+    analyze_parser.set_defaults(func=analyze_media)
+
+    render_parser = subparsers.add_parser("render-plan")
+    render_parser.add_argument("--analysis", required=True)
+    render_parser.add_argument("--out", default="./output")
+    render_parser.add_argument("--output-name", default="edited.mp4")
+    render_parser.add_argument(
+        "--encode-mode",
+        choices=["fast", "fastest", "quality", "hardware"],
+    )
+    render_parser.add_argument(
+        "--captions",
+        choices=["none", "faster-whisper", "whisper-cli"],
+    )
+    render_parser.add_argument("--language")
+    render_parser.add_argument("--whisper-model")
+    render_parser.set_defaults(func=render_from_analysis)
 
     extract_parser = subparsers.add_parser("extract-audio")
     extract_parser.add_argument("--video", required=True)

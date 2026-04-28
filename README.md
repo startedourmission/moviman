@@ -42,7 +42,8 @@ The web UI can:
 
 - Upload a phone video and separate audio file.
 - Upload only a phone video when the video's built-in audio should be used.
-- Cut silent sections and render `edited.mp4`.
+- Analyze silent sections first, then show cut candidates for review.
+- Let you select which cuts to keep before rendering `edited.mp4`.
 - Generate `edited.srt` when captions are enabled.
 - Extract WAV or M4A audio from a MOV/MP4 file.
 - Show processing progress, elapsed time, logs, and download links.
@@ -84,6 +85,19 @@ The output folder will contain:
 - `edited.mp4`: video with silent parts removed and clean audio attached.
 - `edited.srt`: captions, if captions are enabled.
 - `segments.json`: the edit decision list used for the cut.
+
+Analyze first, review or edit the generated plan, then render from it:
+
+```bash
+uv run python yt_auto_edit.py analyze \
+  --video ./input/phone_video.mov \
+  --out ./analysis \
+  --encode-mode fastest
+
+uv run python yt_auto_edit.py render-plan \
+  --analysis ./analysis/analysis.json \
+  --out ./output
+```
 
 Extract audio from a MOV file:
 

@@ -12,7 +12,7 @@ from email.policy import default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -238,6 +238,7 @@ def job_page(run_id, title):
       </div>
 
       <div class="downloads" id="downloads"></div>
+      <div class="review-link" id="review-link"></div>
       <pre id="log"></pre>
     </section>
   </main>
@@ -245,6 +246,56 @@ def job_page(run_id, title):
   <script src="/static/app.js"></script>
 </body>
 </html>"""
+
+
+def review_page(run_id, analysis):
+    cuts = analysis.get("cuts", [])
+    rows = []
+    for cut in cuts:
+        checked = "checked" if cut.get("enabled", True) else ""
+        start = float(cut["start"])
+        end = float(cut["end"])
+        rows.append(
+            f"""
+            <label class="cut-row">
+              <input type="checkbox" name="cut" value="{escape(cut['id'])}" {checked}>
+              <span class="cut-time">{format_time(start)} - {format_time(end)}</span>
+              <span class="cut-duration">{end - start:.1f}s</span>
+            </label>
+            """
+        )
+    rows_html = "\n".join(rows) if rows else '<p class="empty-state">자동 컷 후보가 없습니다.</p>'
+    return shell() + f"""
+  <main class="wrap review-shell">
+    <section class="panel review-panel">
+      <div class="panel-heading">
+        <div>
+          <h2>컷 후보 리뷰</h2>
+          <p>체크된 구간이 최종 렌더에서 삭제됩니다.</p>
+        </div>
+        <span class="tag">{len(cuts)} cuts</span>
+      </div>
+      <video class="preview-video" controls src="/media/{escape(run_id)}/input/{escape(Path(analysis['video']).name)}"></video>
+      <form action="/render/{escape(run_id)}" method="post" class="review-form">
+        <div class="cut-list">{rows_html}</div>
+        <div class="action-row">
+          <button type="button" class="button secondary" data-action="select-all">전체 선택</button>
+          <button type="button" class="button secondary" data-action="select-none">전체 해제</button>
+          <button type="submit" class="button primary">선택대로 렌더</button>
+        </div>
+      </form>
+    </section>
+  </main>
+  <script src="/static/review.js"></script>
+</body>
+</html>"""
+
+
+def format_time(seconds):
+    seconds = max(0.0, seconds)
+    minutes = int(seconds // 60)
+    rest = seconds - minutes * 60
+    return f"{minutes:02d}:{rest:05.2f}"
 
 
 def make_run_dir(prefix):
@@ -366,6 +417,11 @@ def output_files(run_dir):
     return sorted(path.name for path in (run_dir / "output").iterdir() if path.is_file())
 
 
+def input_files(run_dir):
+    input_dir = run_dir / "input"
+    return sorted(path.name for path in input_dir.iterdir() if path.is_file())
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "moviman/0.2"
 
@@ -380,8 +436,17 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/static/app.js":
             self.send_file(BASE_DIR / "static" / "app.js", "text/javascript; charset=utf-8")
             return
+        if parsed.path == "/static/review.js":
+            self.send_file(BASE_DIR / "static" / "review.js", "text/javascript; charset=utf-8")
+            return
         if parsed.path.startswith("/status/"):
             self.handle_status(parsed.path)
+            return
+        if parsed.path.startswith("/review/"):
+            self.handle_review(parsed.path)
+            return
+        if parsed.path.startswith("/media/"):
+            self.handle_media(parsed.path)
             return
         if parsed.path.startswith("/download/"):
             self.handle_download(parsed.path)
@@ -397,6 +462,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/extract":
                 self.handle_extract(fields, files)
+                return
+            if parsed.path.startswith("/render/"):
+                self.handle_render(parsed.path, fields)
                 return
         except ValueError as exc:
             self.send_html(page(error=str(exc)), status=HTTPStatus.BAD_REQUEST)
@@ -416,6 +484,10 @@ class Handler(BaseHTTPRequestHandler):
         if length > MAX_UPLOAD_SIZE:
             raise ValueError("업로드 파일이 너무 큽니다.")
         body = self.rfile.read(length)
+        content_type = self.headers.get("Content-Type", "")
+        if content_type.startswith("application/x-www-form-urlencoded"):
+            parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+            return {key: values[-1] if values else "" for key, values in parsed.items()}, {}
         return parse_multipart(self.headers, body)
 
     def handle_process(self, fields, files):
@@ -429,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
         cmd = [
             sys.executable,
             str(SCRIPT_PATH),
-            "process",
+            "analyze",
             "--video",
             str(video_path),
             "--out",
@@ -453,7 +525,7 @@ class Handler(BaseHTTPRequestHandler):
             audio_path = save_upload(files["audio"], run_dir / "input")
             cmd.extend(["--audio", str(audio_path)])
         start_job(run_id, run_dir, cmd)
-        self.send_html(job_page(run_id, "영상 처리 중"))
+        self.send_html(job_page(run_id, "컷 후보 분석 중"))
 
     def handle_extract(self, fields, files):
         if "video" not in files:
@@ -507,9 +579,69 @@ class Handler(BaseHTTPRequestHandler):
             "percent": int(percent),
             "elapsed": elapsed,
             "files": output_files(run_dir) if status.get("state") == "done" else [],
+            "inputs": input_files(run_dir) if status.get("state") == "done" else [],
+            "review_url": f"/review/{safe_filename(run_id)}"
+            if status.get("state") == "done" and (run_dir / "output" / "analysis.json").exists()
+            else None,
             "log": log_tail(run_dir / "job.log"),
         }
         self.send_json(payload)
+
+    def handle_review(self, path):
+        parts = [unquote(part) for part in path.split("/") if part]
+        if len(parts) != 2:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        _, run_id = parts
+        safe_run_id = safe_filename(run_id)
+        analysis_path = RUNS_DIR / safe_run_id / "output" / "analysis.json"
+        analysis = read_json(analysis_path)
+        if not analysis:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self.send_html(review_page(safe_run_id, analysis))
+
+    def handle_media(self, path):
+        parts = [unquote(part) for part in path.split("/") if part]
+        if len(parts) != 4 or parts[2] != "input":
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        _, run_id, _, filename = parts
+        target = RUNS_DIR / safe_filename(run_id) / "input" / safe_filename(filename)
+        self.send_file(target, "video/mp4")
+
+    def handle_render(self, path, fields):
+        parts = [unquote(part) for part in path.split("/") if part]
+        if len(parts) != 2:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        _, run_id = parts
+        source_run_dir = RUNS_DIR / safe_filename(run_id)
+        analysis_path = source_run_dir / "output" / "analysis.json"
+        analysis = read_json(analysis_path)
+        if not analysis:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+
+        enabled_ids = set(fields.get("enabled_cuts", "").split(",")) if fields.get("enabled_cuts") else set()
+        for cut in analysis.get("cuts", []):
+            cut["enabled"] = cut["id"] in enabled_ids
+        analysis_path.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
+
+        render_id, render_dir = make_run_dir("render")
+        render_analysis_path = render_dir / "input" / "analysis.json"
+        render_analysis_path.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
+        cmd = [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "render-plan",
+            "--analysis",
+            str(render_analysis_path),
+            "--out",
+            str(render_dir / "output"),
+        ]
+        start_job(render_id, render_dir, cmd)
+        self.send_html(job_page(render_id, "선택한 컷 렌더링 중"))
 
     def handle_download(self, path):
         parts = [unquote(part) for part in path.split("/") if part]
