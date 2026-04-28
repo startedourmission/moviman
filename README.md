@@ -101,15 +101,15 @@ Tune silence cutting:
 uv run python yt_auto_edit.py process \
   --video phone.mov \
   --audio garageband.m4a \
-  --silence-threshold=-38dB \
+  --silence-threshold=-45dB \
   --min-silence 0.6 \
   --padding 0.16
 ```
 
 If the cut feels too aggressive, lower the threshold or increase padding:
 
-- More aggressive cut: `--silence-threshold=-32dB --min-silence 0.35`
-- More natural cut: `--silence-threshold=-42dB --min-silence 0.8 --padding 0.25`
+- More aggressive cut: `--silence-threshold=-38dB --min-silence 0.35`
+- More natural cut: `--silence-threshold=-50dB --min-silence 0.8 --padding 0.25`
 
 If the video and audio do not start at exactly the same time, pass an offset:
 

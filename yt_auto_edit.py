@@ -178,9 +178,6 @@ def build_filter(segments, audio_offset, external_audio):
 
 
 def render_video(video_path, audio_path, output_path, segments, audio_offset):
-    if not segments:
-        raise SystemExit("No kept segments were detected. Try a less aggressive silence threshold.")
-
     external_audio = audio_path is not None
     filter_complex = build_filter(segments, audio_offset, external_audio)
     cmd = [
@@ -361,6 +358,13 @@ def process(args):
         args.padding,
         args.min_keep,
     )
+    fallback_reason = None
+    if not segments:
+        fallback_reason = (
+            "Silence detection marked the whole source as silent; "
+            "kept the full media instead."
+        )
+        segments = [(start_time, end_time)]
 
     write_progress(30, "Writing edit decision list")
     segments_json = out_dir / "segments.json"
@@ -373,6 +377,7 @@ def process(args):
                 "silences": silences,
                 "timeline_silences": timeline_silences,
                 "kept_segments": segments,
+                "fallback_reason": fallback_reason,
                 "settings": {
                     "silence_threshold": args.silence_threshold,
                     "min_silence": args.min_silence,
@@ -387,7 +392,11 @@ def process(args):
     )
 
     edited_path = out_dir / args.output_name
-    write_progress(38, "Rendering edited video")
+    if fallback_reason:
+        print(fallback_reason)
+        write_progress(38, "Rendering full media")
+    else:
+        write_progress(38, "Rendering edited video")
     render_video(video_path, audio_path, edited_path, segments, audio_offset)
 
     if args.captions == "faster-whisper":

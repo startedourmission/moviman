@@ -124,7 +124,7 @@ def page(*, error=None, log=None):
 
         <label class="field">
           <span>무음 기준</span>
-          <input name="silence_threshold" value="-38dB">
+          <input name="silence_threshold" value="-45dB">
         </label>
 
         <label class="field">
@@ -193,9 +193,9 @@ def page(*, error=None, log=None):
       <section class="panel metrics-panel">
         <h2>기준값</h2>
         <dl>
-          <div><dt>자연스러운 컷</dt><dd>-38dB / 0.6 / 0.16</dd></div>
-          <div><dt>덜 자르기</dt><dd>-42dB / 0.8 / 0.25</dd></div>
-          <div><dt>더 자르기</dt><dd>-32dB / 0.35 / 0.12</dd></div>
+          <div><dt>기본값</dt><dd>-45dB / 0.6 / 0.16</dd></div>
+          <div><dt>덜 자르기</dt><dd>-50dB / 0.8 / 0.25</dd></div>
+          <div><dt>더 자르기</dt><dd>-38dB / 0.35 / 0.12</dd></div>
         </dl>
       </section>
     </aside>
@@ -424,7 +424,7 @@ class Handler(BaseHTTPRequestHandler):
             "--out",
             str(out_dir),
             "--silence-threshold",
-            fields.get("silence_threshold", "-38dB"),
+            fields.get("silence_threshold", "-45dB"),
             "--min-silence",
             fields.get("min_silence", "0.6"),
             "--padding",
