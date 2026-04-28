@@ -116,6 +116,111 @@ h1 {
   padding: 28px 0 52px;
 }
 
+.home-editor-shell {
+  min-height: auto;
+}
+
+.home-editor {
+  display: contents;
+}
+
+.empty-viewer {
+  cursor: pointer;
+  text-align: center;
+}
+
+.empty-viewer > div {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  max-width: 460px;
+  padding: 28px;
+}
+
+.empty-viewer h2 {
+  color: #f7fafc;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.empty-viewer p {
+  color: #9ca8b4;
+  font-size: 14px;
+}
+
+.drop-kicker {
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.hidden-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.home-inspector {
+  overflow: auto;
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.home-inspector .field span {
+  color: #cbd5e1;
+}
+
+.home-inspector input,
+.home-inspector select {
+  border-color: #334255;
+  background: #0f151d;
+  color: #f7fafc;
+}
+
+.timeline-empty .timeline-track::after {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #9ca8b4;
+  font-size: 13px;
+  content: "분석 후 컷 블록이 여기에 표시됩니다";
+}
+
+.audio-extract-dock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #27313d;
+  border-radius: 8px;
+  background: #111820;
+  color: #cbd5e1;
+}
+
+.audio-extract-dock span {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.audio-extract-dock input,
+.audio-extract-dock select {
+  width: auto;
+  min-width: 150px;
+  border-color: #334255;
+  background: #0f151d;
+  color: #f7fafc;
+}
+
 .panel,
 .notice {
   background: var(--surface);
@@ -330,6 +435,12 @@ a:focus {
 
 .button.secondary:hover {
   background: #eef6ff;
+}
+
+.button:disabled,
+.icon-button:disabled {
+  cursor: default;
+  opacity: 0.48;
 }
 
 .side-stack {

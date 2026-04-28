@@ -71,7 +71,7 @@ def shell():
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>moviman</title>
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=6">
 </head>
 <body>
   <header class="appbar">
@@ -102,133 +102,115 @@ def page(*, error=None, log=None):
         """
 
     return shell() + f"""
-  <main class="wrap workspace">
+  <main class="editor-shell home-editor-shell">
     {error_html}
-    <section class="panel primary-panel intake-panel">
-      <div class="panel-heading hero-heading">
+    <form action="/process" method="post" enctype="multipart/form-data" class="home-editor" id="home-editor" aria-label="new edit">
+      <section class="editor-topbar">
         <div>
-          <span class="eyebrow">Analyze first · Render after review</span>
-          <h2>영상 올리고 컷 후보부터 확인</h2>
-          <p>무음 구간을 먼저 찾아서 리뷰 화면에 올립니다. 체크한 컷만 최종 렌더에 반영됩니다.</p>
+          <h2>moviman editor</h2>
+          <p>영상을 올리면 무음 컷을 분석하고 바로 타임라인 에디터로 넘어갑니다.</p>
         </div>
-        <span class="tag">MOV / MP4</span>
-      </div>
-
-      <div class="workflow-strip" aria-label="workflow">
-        <span><strong>1</strong> 업로드</span>
-        <span><strong>2</strong> 컷 분석</span>
-        <span><strong>3</strong> 리뷰</span>
-        <span><strong>4</strong> 렌더</span>
-      </div>
-
-      <form action="/process" method="post" enctype="multipart/form-data" class="form-grid edit-form">
-        <label class="field file-field span-2">
-          <span>영상 파일</span>
-          <input type="file" name="video" accept=".mov,.mp4,.m4v,video/*" required>
-          <small>폰/OBS 영상 파일을 넣습니다. 오디오는 영상 안의 트랙을 기본으로 씁니다.</small>
-        </label>
-
-        <label class="field file-field span-2">
-          <span>외부 오디오 파일</span>
-          <input type="file" name="audio" accept=".wav,.m4a,.mp3,.aac,audio/*">
-          <small>비워두면 영상 안의 오디오를 사용합니다.</small>
-        </label>
-
-        <div class="section-label span-2">컷 감지</div>
-        <label class="field">
-          <span>무음 기준</span>
-          <input name="silence_threshold" value="-45dB">
-        </label>
-
-        <label class="field">
-          <span>최소 무음</span>
-          <input name="min_silence" type="number" step="0.05" value="0.6">
-        </label>
-
-        <label class="field">
-          <span>앞뒤 여유</span>
-          <input name="padding" type="number" step="0.01" value="0.16">
-        </label>
-
-        <label class="field">
-          <span>오디오 오프셋</span>
-          <input name="audio_offset" type="number" step="0.01" value="0">
-        </label>
-
-        <div class="section-label span-2">출력</div>
-        <label class="field">
-          <span>캡션</span>
-          <select name="captions">
-            <option value="none">생성 안 함</option>
-            <option value="faster-whisper">faster-whisper</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>언어</span>
-          <select name="language">
-            <option value="ko">한국어</option>
-            <option value="en">English</option>
-            <option value="ja">日本語</option>
-          </select>
-        </label>
-
-        <label class="field span-2">
-          <span>렌더 속도</span>
-          <select name="encode_mode">
-            <option value="fast">빠름</option>
-            <option value="fastest">가장 빠름</option>
-            <option value="hardware">하드웨어</option>
-            <option value="quality">품질 우선</option>
-          </select>
-          <small>빠름은 기본값입니다. 하드웨어는 Mac의 VideoToolbox를 사용합니다.</small>
-        </label>
-
-        <div class="action-row span-2">
-          <button type="submit" class="button primary">컷 후보 분석</button>
-          <span class="run-note">분석 후 리뷰 화면에서 삭제할 컷을 고릅니다.</span>
+        <div class="timeline-actions">
+          <button type="submit" class="button primary">컷 분석 시작</button>
         </div>
-      </form>
-    </section>
+      </section>
 
-    <aside class="side-stack">
-      <section class="panel utility-panel">
-        <div class="panel-heading compact">
+      <section class="editor-stage">
+        <label class="viewer-panel empty-viewer">
+          <input class="hidden-file" type="file" name="video" accept=".mov,.mp4,.m4v,video/*" required>
           <div>
-            <h2>오디오 추출</h2>
-            <p>MOV/MP4에서 오디오만 분리합니다.</p>
+            <span class="drop-kicker">Drop video here</span>
+            <h2>영상 파일을 여기에 올리기</h2>
+            <p>MOV/MP4를 선택하면 분석 후 타임라인 에디터로 바로 이동합니다.</p>
+            <span class="button secondary">영상 선택</span>
           </div>
-        </div>
-        <form action="/extract" method="post" enctype="multipart/form-data" class="form-stack">
+        </label>
+        <aside class="inspector-panel home-inspector">
+          <div>
+            <span class="eyebrow">Inspector</span>
+            <h2>분석 설정</h2>
+            <p>대부분은 기본값으로 시작하면 됩니다.</p>
+          </div>
           <label class="field">
-            <span>영상 파일</span>
-            <input type="file" name="video" accept=".mov,.mp4,.m4v,video/*" required>
+            <span>외부 오디오</span>
+            <input type="file" name="audio" accept=".wav,.m4a,.mp3,.aac,audio/*">
           </label>
           <label class="field">
-            <span>저장 형식</span>
-            <select name="format">
-              <option value="wav">WAV</option>
-              <option value="m4a">M4A</option>
+            <span>무음 기준</span>
+            <input name="silence_threshold" value="-45dB">
+          </label>
+          <div class="field-pair">
+            <label class="field">
+              <span>최소 무음</span>
+              <input name="min_silence" type="number" step="0.05" value="0.6">
+            </label>
+            <label class="field">
+              <span>앞뒤 여유</span>
+              <input name="padding" type="number" step="0.01" value="0.16">
+            </label>
+          </div>
+          <label class="field">
+            <span>오디오 오프셋</span>
+            <input name="audio_offset" type="number" step="0.01" value="0">
+          </label>
+          <div class="field-pair">
+            <label class="field">
+              <span>캡션</span>
+              <select name="captions">
+                <option value="none">없음</option>
+                <option value="faster-whisper">whisper</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>언어</span>
+              <select name="language">
+                <option value="ko">한국어</option>
+                <option value="en">English</option>
+                <option value="ja">日本語</option>
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span>렌더 속도</span>
+            <select name="encode_mode">
+              <option value="fast">빠름</option>
+              <option value="fastest">가장 빠름</option>
+              <option value="hardware">하드웨어</option>
+              <option value="quality">품질 우선</option>
             </select>
           </label>
-          <button type="submit" class="button secondary">오디오 추출</button>
-        </form>
+        </aside>
       </section>
 
-      <section class="panel metrics-panel">
-        <div class="panel-heading compact">
-          <div>
-            <h2>프리셋 기준값</h2>
-            <p>영상 성격에 맞춰 숫자만 바꿔서 시작합니다.</p>
+      <section class="timeline-panel">
+        <div class="timeline-toolbar">
+          <div class="transport">
+            <button type="button" class="icon-button" disabled>-5s</button>
+            <button type="button" class="button secondary" disabled>재생</button>
+            <button type="button" class="icon-button" disabled>+5s</button>
+            <span class="timecode">00:00.00</span>
+          </div>
+          <div class="timeline-actions">
+            <button type="button" class="button secondary" disabled>현재 위치 컷 추가</button>
+            <button type="submit" class="button primary">컷 분석 시작</button>
           </div>
         </div>
-        <dl>
-          <div><dt>기본값</dt><dd>-45dB / 0.6 / 0.16</dd></div>
-          <div><dt>덜 자르기</dt><dd>-50dB / 0.8 / 0.25</dd></div>
-          <div><dt>더 자르기</dt><dd>-38dB / 0.35 / 0.12</dd></div>
-        </dl>
+        <div class="timeline-ruler timeline-empty">
+          <div class="timeline-track"></div>
+          <div class="timeline-playhead"></div>
+        </div>
       </section>
-    </aside>
+    </form>
+
+    <form action="/extract" method="post" enctype="multipart/form-data" class="audio-extract-dock">
+      <span>오디오만 필요할 때</span>
+      <input type="file" name="video" accept=".mov,.mp4,.m4v,video/*" required>
+      <select name="format">
+        <option value="wav">WAV</option>
+        <option value="m4a">M4A</option>
+      </select>
+      <button type="submit" class="button secondary">오디오 추출</button>
+    </form>
   </main>
 </body>
 </html>"""
@@ -262,7 +244,7 @@ def job_page(run_id, title):
     </section>
   </main>
   <script>window.movimanRunId = "{escaped_run_id}";</script>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>"""
 
@@ -337,7 +319,7 @@ def review_page(run_id, analysis):
       </section>
     </form>
   </main>
-  <script src="/static/review.js?v=5"></script>
+  <script src="/static/review.js?v=6"></script>
 </body>
 </html>"""
 
