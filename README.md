@@ -47,6 +47,8 @@ The web UI can:
 - Extract WAV or M4A audio from a MOV/MP4 file.
 - Show processing progress, elapsed time, logs, and download links.
 
+The visual rules are documented in `DESIGN.md`.
+
 For local caption generation, install the optional caption dependencies:
 
 ```bash
