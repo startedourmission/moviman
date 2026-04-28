@@ -45,6 +45,7 @@ The web UI can:
 - Cut silent sections and render `edited.mp4`.
 - Generate `edited.srt` when captions are enabled.
 - Extract WAV or M4A audio from a MOV/MP4 file.
+- Show processing progress, elapsed time, logs, and download links.
 
 For local caption generation, install the optional caption dependencies:
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import html
+import json
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from email.parser import BytesParser
 from email.policy import default
@@ -19,6 +21,23 @@ SCRIPT_PATH = BASE_DIR / "yt_auto_edit.py"
 HOST = "127.0.0.1"
 PORT = 5177
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024 * 1024
+EXTRA_TOOL_PATHS = (
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+)
+
+
+def tool_env():
+    env = os.environ.copy()
+    existing = env.get("PATH", "")
+    parts = [path for path in existing.split(os.pathsep) if path]
+    for path in EXTRA_TOOL_PATHS:
+        if path not in parts:
+            parts.append(path)
+    env["PATH"] = os.pathsep.join(parts)
+    return env
 
 
 def safe_filename(value, fallback="upload"):
@@ -29,6 +48,215 @@ def safe_filename(value, fallback="upload"):
 
 def escape(value):
     return html.escape(str(value), quote=True)
+
+
+def write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(data), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def read_json(path, default=None):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+
+
+def job_page(run_id, title):
+    escaped_run_id = escape(run_id)
+    escaped_title = escape(title)
+    return f"""<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>moviman</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #1f2933;
+      --muted: #64707d;
+      --line: #d8dde3;
+      --accent: #1c7c70;
+      --accent-strong: #135e55;
+      --danger: #b42318;
+      --soft: #edf5f3;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }}
+    header {{
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }}
+    .wrap {{
+      width: min(760px, calc(100vw - 32px));
+      margin: 0 auto;
+    }}
+    .top {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 0;
+    }}
+    h1 {{
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }}
+    main {{ padding: 28px 0 48px; }}
+    section {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+    }}
+    h2 {{
+      margin: 0 0 14px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }}
+    .meta {{
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }}
+    .bar {{
+      width: 100%;
+      height: 18px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+      background: #eef1f4;
+    }}
+    .fill {{
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width 180ms ease;
+    }}
+    .stage {{
+      margin: 12px 0 0;
+      color: var(--ink);
+      font-size: 14px;
+    }}
+    .downloads {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }}
+    .button {{
+      min-height: 42px;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 9px 14px;
+      background: var(--accent);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }}
+    .button.secondary {{
+      background: #ffffff;
+      color: var(--accent-strong);
+    }}
+    pre {{
+      max-height: 320px;
+      overflow: auto;
+      margin: 14px 0 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }}
+    .error {{ color: var(--danger); }}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap top">
+      <h1>moviman</h1>
+      <a class="button secondary" href="/">새 작업</a>
+    </div>
+  </header>
+  <main class="wrap">
+    <section>
+      <h2>{escaped_title}</h2>
+      <div class="meta">
+        <span id="percent">0%</span>
+        <span id="elapsed">0초</span>
+      </div>
+      <div class="bar" aria-label="progress"><div class="fill" id="fill"></div></div>
+      <p class="stage" id="stage">대기 중</p>
+      <div class="downloads" id="downloads"></div>
+      <pre id="log"></pre>
+    </section>
+  </main>
+  <script>
+    const runId = "{escaped_run_id}";
+    const fill = document.getElementById("fill");
+    const percent = document.getElementById("percent");
+    const elapsed = document.getElementById("elapsed");
+    const stage = document.getElementById("stage");
+    const downloads = document.getElementById("downloads");
+    const log = document.getElementById("log");
+
+    function formatElapsed(seconds) {{
+      const value = Math.max(0, Math.floor(seconds || 0));
+      const minutes = Math.floor(value / 60);
+      const rest = value % 60;
+      if (minutes > 0) return `${{minutes}}분 ${{rest}}초`;
+      return `${{rest}}초`;
+    }}
+
+    function render(data) {{
+      const progress = Math.max(0, Math.min(100, data.percent || 0));
+      fill.style.width = `${{progress}}%`;
+      percent.textContent = `${{progress}}%`;
+      elapsed.textContent = formatElapsed(data.elapsed);
+      stage.textContent = data.stage || data.state || "처리 중";
+      stage.className = data.state === "error" ? "stage error" : "stage";
+      log.textContent = data.log || "";
+      if (data.files && data.files.length) {{
+        downloads.innerHTML = data.files.map((file) =>
+          `<a class="button secondary" href="/download/${{runId}}/${{encodeURIComponent(file)}}">${{file}}</a>`
+        ).join("");
+      }}
+      if (data.state !== "done" && data.state !== "error") {{
+        setTimeout(poll, 700);
+      }}
+    }}
+
+    async function poll() {{
+      const response = await fetch(`/status/${{runId}}`);
+      render(await response.json());
+    }}
+
+    poll();
+  </script>
+</body>
+</html>"""
 
 
 def page(*, error=None, result=None, log=None):
@@ -331,7 +559,7 @@ def page(*, error=None, result=None, log=None):
 
 def make_run_dir(prefix):
     RUNS_DIR.mkdir(parents=True, exist_ok=True)
-    run_id = f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
+    run_id = f"{prefix}-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}-{time.time_ns() % 1000000}"
     run_dir = RUNS_DIR / run_id
     (run_dir / "input").mkdir(parents=True)
     (run_dir / "output").mkdir()
@@ -374,18 +602,74 @@ def save_upload(file_info, target_dir):
     return path
 
 
-def run_command(cmd):
-    result = subprocess.run(
-        cmd,
-        cwd=BASE_DIR,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
+def log_tail(path, max_chars=12000):
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
+
+
+def start_job(run_id, run_dir, cmd):
+    status_path = run_dir / "status.json"
+    progress_path = run_dir / "progress.json"
+    log_path = run_dir / "job.log"
+    write_json(
+        status_path,
+        {
+            "state": "queued",
+            "stage": "Queued",
+            "started_at": time.time(),
+            "ended_at": None,
+            "returncode": None,
+        },
     )
-    if result.returncode != 0:
-        raise RuntimeError(result.stdout)
-    return result.stdout
+
+    def worker():
+        started_at = time.time()
+        write_json(
+            status_path,
+            {
+                "state": "running",
+                "stage": "Starting",
+                "started_at": started_at,
+                "ended_at": None,
+                "returncode": None,
+            },
+        )
+        env = tool_env()
+        env["MOVIMAN_PROGRESS_FILE"] = str(progress_path)
+        with log_path.open("w", encoding="utf-8") as log_file:
+            process = subprocess.Popen(
+                cmd,
+                cwd=BASE_DIR,
+                env=env,
+                text=True,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+            )
+            returncode = process.wait()
+        ended_at = time.time()
+        progress = read_json(progress_path, {})
+        state = "done" if returncode == 0 else "error"
+        stage = "Done" if returncode == 0 else "Failed"
+        if returncode == 0:
+            write_json(progress_path, {"percent": 100, "stage": stage, "updated_at": ended_at})
+        write_json(
+            status_path,
+            {
+                "state": state,
+                "stage": progress.get("stage", stage),
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "returncode": returncode,
+            },
+        )
+
+    thread = threading.Thread(target=worker, name=f"job-{run_id}", daemon=True)
+    thread.start()
 
 
 def output_files(run_dir):
@@ -399,6 +683,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/":
             self.send_html(page())
+            return
+        if parsed.path.startswith("/status/"):
+            self.handle_status(parsed.path)
             return
         if parsed.path.startswith("/download/"):
             self.handle_download(parsed.path)
@@ -467,17 +754,8 @@ class Handler(BaseHTTPRequestHandler):
         if "audio" in files:
             audio_path = save_upload(files["audio"], run_dir / "input")
             cmd.extend(["--audio", str(audio_path)])
-        log = run_command(cmd)
-        self.send_html(
-            page(
-                result={
-                    "run_id": run_id,
-                    "message": "편집 결과가 준비됐습니다.",
-                    "files": output_files(run_dir),
-                    "log": log,
-                }
-            )
-        )
+        start_job(run_id, run_dir, cmd)
+        self.send_html(job_page(run_id, "영상 처리 중"))
 
     def handle_extract(self, fields, files):
         if "video" not in files:
@@ -501,17 +779,39 @@ class Handler(BaseHTTPRequestHandler):
             "--format",
             audio_format,
         ]
-        log = run_command(cmd)
-        self.send_html(
-            page(
-                result={
-                    "run_id": run_id,
-                    "message": "오디오 파일이 준비됐습니다.",
-                    "files": [output_name],
-                    "log": log,
-                }
-            )
-        )
+        start_job(run_id, run_dir, cmd)
+        self.send_html(job_page(run_id, "오디오 추출 중"))
+
+    def handle_status(self, path):
+        parts = [unquote(part) for part in path.split("/") if part]
+        if len(parts) != 2:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        _, run_id = parts
+        run_dir = RUNS_DIR / safe_filename(run_id)
+        status = read_json(run_dir / "status.json")
+        if not status:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        progress = read_json(run_dir / "progress.json", {})
+        now = time.time()
+        ended_at = status.get("ended_at")
+        started_at = status.get("started_at") or now
+        elapsed = (ended_at or now) - started_at
+        percent = progress.get("percent")
+        if percent is None:
+            percent = 100 if status.get("state") == "done" else 2
+        if status.get("state") == "error" and percent >= 100:
+            percent = 99
+        payload = {
+            "state": status.get("state", "running"),
+            "stage": progress.get("stage") or status.get("stage", "처리 중"),
+            "percent": int(percent),
+            "elapsed": elapsed,
+            "files": output_files(run_dir) if status.get("state") == "done" else [],
+            "log": log_tail(run_dir / "job.log"),
+        }
+        self.send_json(payload)
 
     def handle_download(self, path):
         parts = [unquote(part) for part in path.split("/") if part]
@@ -533,7 +833,10 @@ class Handler(BaseHTTPRequestHandler):
             f'attachment; filename="{safe_filename(filename)}"',
         )
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except BrokenPipeError:
+            return
 
     def send_html(self, content, status=HTTPStatus.OK):
         data = content.encode("utf-8")
@@ -541,7 +844,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except BrokenPipeError:
+            return
+
+    def send_json(self, payload, status=HTTPStatus.OK):
+        data = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except BrokenPipeError:
+            return
 
 
 def main():

@@ -7,10 +7,46 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
 TIME_RE = re.compile(r"silence_(start|end):\s*([0-9.]+)")
+EXTRA_TOOL_PATHS = (
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+)
+
+
+def extend_tool_path():
+    existing = os.environ.get("PATH", "")
+    parts = [path for path in existing.split(os.pathsep) if path]
+    for path in EXTRA_TOOL_PATHS:
+        if path not in parts:
+            parts.append(path)
+    os.environ["PATH"] = os.pathsep.join(parts)
+
+
+def write_progress(percent, stage):
+    progress_path = os.environ.get("MOVIMAN_PROGRESS_FILE")
+    if not progress_path:
+        return
+    path = Path(progress_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(
+        json.dumps(
+            {
+                "percent": max(0, min(100, int(percent))),
+                "stage": stage,
+                "updated_at": time.time(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    tmp_path.replace(path)
 
 
 def run(cmd, *, capture=False):
@@ -264,6 +300,7 @@ def extract_audio_file(video_path, output_path, audio_format):
 
 
 def extract_audio(args):
+    write_progress(5, "Preparing audio extraction")
     video_path = Path(args.video).expanduser().resolve()
     out_path = Path(args.out).expanduser().resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -274,11 +311,14 @@ def extract_audio(args):
     audio_format = args.format
     if audio_format == "auto":
         audio_format = out_path.suffix.lstrip(".").lower()
+    write_progress(25, "Extracting audio")
     extract_audio_file(video_path, out_path, audio_format)
+    write_progress(100, "Done")
     print(f"Done: {out_path}")
 
 
 def process(args):
+    write_progress(3, "Preparing files")
     require_tool("ffmpeg")
     require_tool("ffprobe")
 
@@ -292,6 +332,7 @@ def process(args):
     if audio_path is not None and not audio_path.exists():
         raise SystemExit(f"Audio not found: {audio_path}")
 
+    write_progress(8, "Reading media duration")
     video_duration = ffprobe_duration(video_path)
     if audio_path is None:
         source_audio_path = video_path
@@ -307,6 +348,7 @@ def process(args):
     if not math.isfinite(end_time) or end_time <= start_time:
         raise SystemExit("Could not determine a valid media duration.")
 
+    write_progress(18, "Detecting silence")
     silences = detect_silences(source_audio_path, args.silence_threshold, args.min_silence)
     timeline_silences = [
         (start + audio_offset, end + audio_offset)
@@ -320,6 +362,7 @@ def process(args):
         args.min_keep,
     )
 
+    write_progress(30, "Writing edit decision list")
     segments_json = out_dir / "segments.json"
     segments_json.write_text(
         json.dumps(
@@ -344,9 +387,11 @@ def process(args):
     )
 
     edited_path = out_dir / args.output_name
+    write_progress(38, "Rendering edited video")
     render_video(video_path, audio_path, edited_path, segments, audio_offset)
 
     if args.captions == "faster-whisper":
+        write_progress(88, "Generating captions")
         generate_captions_faster_whisper(
             edited_path,
             out_dir / "edited.srt",
@@ -354,8 +399,10 @@ def process(args):
             args.whisper_model,
         )
     elif args.captions == "whisper-cli":
+        write_progress(88, "Generating captions")
         generate_captions_whisper_cli(edited_path, out_dir / "edited.srt", args.language)
 
+    write_progress(100, "Done")
     print(f"Done: {edited_path}")
     print(f"Edit decision list: {segments_json}")
 
@@ -415,6 +462,7 @@ def parse_args(argv=None):
 
 
 def main():
+    extend_tool_path()
     args = parse_args()
     args.func(args)
 
